@@ -1,0 +1,46 @@
+name: Import existing Johansson Town
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/import-town.yml', 'migration/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-johansson-town
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.16.0'
+          package-manager-cache: false
+      - name: Check this is still an empty town repository
+        run: test ! -f index.html
+      - name: Import pinned town and stockroom sources
+        run: node migration/import.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build:pages
+      - run: npm run check:pages
+      - run: node --test tests/runtime-package.test.mjs
+      - run: node --test --test-name-pattern='old saved visits' tests/consolidation.test.mjs
+      - run: npm run test:storage
+      - name: Commit the verified standalone town
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git add -f art
+          git commit -m "Import standalone Johansson Town and its checked Pages build"
+          git push origin HEAD:main
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
